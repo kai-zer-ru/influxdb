@@ -19,6 +19,7 @@ type InfluxDB struct {
 	MainDatabaseName string
 	Organisation	 string
 	Bucket 			 string
+	StatStopChannel  chan int
 }
 
 // Connect to influxdb
@@ -41,6 +42,7 @@ func (i *InfluxDB) Connect() error {
 		i.client = influxdb2.NewClientWithOptions("http://"+i.HostPort, "", opt)
 		i.writeAPI = i.client.WriteAPIBlocking(i.Organisation, i.Bucket)
 		i.isConnected = true
+		i.StatStopChannel = make(chan int)
 	}
 	return nil
 }
@@ -65,4 +67,23 @@ func (i *InfluxDB) Close() {
 	}
 	i.client.Close()
 	i.isConnected = false
+}
+
+// StatHandler isRunning
+func (i *InfluxDB) StatHandler(daemonNameForGrafana string) error {
+	err := i.SendData(daemonNameForGrafana, "IsRunning", 1)
+	if err != nil {
+		return err
+	}
+	for {
+		select{
+		case <-time.After(time.Second):
+			err = i.SendData(daemonNameForGrafana, "IsRunning", 1)
+			if err != nil {
+				return err
+			}
+		case <-i.StatStopChannel:
+			return nil
+		}
+	}
 }
