@@ -21,7 +21,7 @@ type InfluxDB struct {
 func (i *InfluxDB) Connect() {
 	if !i.isConnected {
 		i.client = influxdb2.NewClient("http://"+i.HostPort, "")
-		i.writeAPI = i.client.WriteAPIBlocking("my-org", "my-bucket")
+		i.writeAPI = i.client.WriteAPIBlocking("", "")
 		i.isConnected = true
 	}
 }
