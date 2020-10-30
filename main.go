@@ -15,7 +15,9 @@ type InfluxDB struct {
 	client           influxdb2.Client
 	writeAPI         api.WriteAPIBlocking
 	HostPort         string
+	// deprecated
 	MainDatabaseName string
+	DaemonNae string
 	Organisation     string
 	Bucket           string
 	StatStopChannel  chan int
@@ -45,8 +47,8 @@ func (i *InfluxDB) Connect() error {
 		if i.HostPort == "" {
 			return errors.New("no host name")
 		}
-		if i.MainDatabaseName == "" {
-			return errors.New("no database name")
+		if i.DaemonNae == "" {
+			return errors.New("no DaemonNae name")
 		}
 		if i.SaveSecondPeriod == 0 {
 			i.SaveSecondPeriod = 60
@@ -61,12 +63,12 @@ func (i *InfluxDB) Connect() error {
 	return nil
 }
 
-func (i *InfluxDB) sendData(daemonName, pointName string, value interface{}) error {
+func (i *InfluxDB) sendData(pointName string, value interface{}) error {
 	if !i.isConnected {
 		return errors.New("not connected")
 	}
-	p := influxdb2.NewPoint(i.MainDatabaseName,
-		map[string]string{daemonName: pointName},
+	p := influxdb2.NewPoint(i.DaemonNae,
+		map[string]string{"point": pointName},
 		map[string]interface{}{"value": value},
 		time.Now(),
 	)
@@ -83,8 +85,8 @@ func (i *InfluxDB) Close() {
 }
 
 // StatHandler isRunning
-func (i *InfluxDB) StatHandler(daemonNameForGrafana string) {
-	err := i.sendData(daemonNameForGrafana, "IsRunning", 1)
+func (i *InfluxDB) StatHandler() {
+	err := i.sendData("IsRunning", 1)
 	if err != nil {
 		return
 	}
@@ -92,9 +94,9 @@ func (i *InfluxDB) StatHandler(daemonNameForGrafana string) {
 		select {
 		case <-time.After(time.Duration(i.SaveSecondPeriod) * time.Second):
 			lockStat.Lock()
-			_ = i.sendData(daemonNameForGrafana, "IsRunning", 1)
+			_ = i.sendData("IsRunning", 1)
 			for k, v := range statCounters {
-				_ = i.sendData(daemonNameForGrafana, k, v)
+				_ = i.sendData(k, v)
 			}
 			statCounters = map[string]int64{}
 			lockStat.Unlock()
