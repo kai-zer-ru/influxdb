@@ -19,6 +19,7 @@ type InfluxDB struct {
 	Organisation     string
 	Bucket           string
 	StatStopChannel  chan int
+	SaveSecondPeriod int64
 }
 
 type statData struct {
@@ -27,8 +28,6 @@ type statData struct {
 }
 
 var (
-	nextStatSaveTime int64
-	saveSecondPeriod int64
 	statChannels     = make(chan statData, 1000000) // канал сбора статистики
 	lockStat         sync.Mutex
 	statCounters     = make(map[string]int64) // данные по счетчикам
@@ -49,7 +48,9 @@ func (i *InfluxDB) Connect() error {
 		if i.MainDatabaseName == "" {
 			return errors.New("no database name")
 		}
-		saveSecondPeriod = 60
+		if i.SaveSecondPeriod == 0 {
+			i.SaveSecondPeriod = 60
+		}
 		opt := influxdb2.DefaultOptions()
 		opt.SetLogLevel(3)
 		i.client = influxdb2.NewClientWithOptions("http://"+i.HostPort, "", opt)
@@ -87,17 +88,14 @@ func (i *InfluxDB) StatHandler(daemonNameForGrafana string) {
 	if err != nil {
 		return
 	}
-	t := time.Now().Unix()
-	nextStatSaveTime = t + saveSecondPeriod - t%saveSecondPeriod
 	for {
 		select {
-		case <-time.After(time.Duration(nextStatSaveTime-time.Now().Unix()) * time.Second):
+		case <-time.After(time.Duration(i.SaveSecondPeriod) * time.Second):
 			lockStat.Lock()
 			_ = i.sendData(daemonNameForGrafana, "IsRunning", 1)
 			for k, v := range statCounters {
 				_ = i.sendData(daemonNameForGrafana, k, v)
 			}
-			nextStatSaveTime = t + saveSecondPeriod - t%saveSecondPeriod
 			statCounters = map[string]int64{}
 			lockStat.Unlock()
 		case <-i.StatStopChannel:
