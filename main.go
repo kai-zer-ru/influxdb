@@ -92,9 +92,10 @@ func (i *InfluxDB) StatHandler() {
 	}
 	for {
 		select {
+		case <-time.After(time.Second):
+			_ = i.sendData("IsRunning", 1)
 		case <-time.After(time.Duration(i.SaveSecondPeriod) * time.Second):
 			lockStat.Lock()
-			_ = i.sendData("IsRunning", 1)
 			for k, v := range statCounters {
 				_ = i.sendData(k, v)
 			}
