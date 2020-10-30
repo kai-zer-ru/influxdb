@@ -2,13 +2,12 @@ package influxdb
 
 import (
 	"context"
-	"time"
 	"errors"
-
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/influxdata/influxdb-client-go/v2/api"
+	"sync"
+	"time"
 )
-
 
 // InfluxDB struct
 type InfluxDB struct {
@@ -17,10 +16,23 @@ type InfluxDB struct {
 	writeAPI         api.WriteAPIBlocking
 	HostPort         string
 	MainDatabaseName string
-	Organisation	 string
-	Bucket 			 string
+	Organisation     string
+	Bucket           string
 	StatStopChannel  chan int
 }
+
+type statData struct {
+	statType string
+	counter  int64
+}
+
+var (
+	nextStatSaveTime int64
+	saveSecondPeriod int64
+	statChannels     = make(chan statData, 1000000) // канал сбора статистики
+	lockStat         sync.Mutex
+	statCounters     = make(map[string]int64) // данные по счетчикам
+)
 
 // Connect to influxdb
 func (i *InfluxDB) Connect() error {
@@ -37,6 +49,7 @@ func (i *InfluxDB) Connect() error {
 		if i.MainDatabaseName == "" {
 			return errors.New("no database name")
 		}
+		saveSecondPeriod = 60
 		opt := influxdb2.DefaultOptions()
 		opt.SetLogLevel(3)
 		i.client = influxdb2.NewClientWithOptions("http://"+i.HostPort, "", opt)
@@ -47,8 +60,7 @@ func (i *InfluxDB) Connect() error {
 	return nil
 }
 
-// SendData to influxdb
-func (i *InfluxDB) SendData(daemonName, pointName string, value interface{}) error {
+func (i *InfluxDB) sendData(daemonName, pointName string, value interface{}) error {
 	if !i.isConnected {
 		return errors.New("not connected")
 	}
@@ -70,20 +82,38 @@ func (i *InfluxDB) Close() {
 }
 
 // StatHandler isRunning
-func (i *InfluxDB) StatHandler(daemonNameForGrafana string) error {
-	err := i.SendData(daemonNameForGrafana, "IsRunning", 1)
+func (i *InfluxDB) StatHandler(daemonNameForGrafana string) {
+	err := i.sendData(daemonNameForGrafana, "IsRunning", 1)
 	if err != nil {
-		return err
+		return
 	}
+	t := time.Now().Unix()
+	nextStatSaveTime = t + saveSecondPeriod - t%saveSecondPeriod
 	for {
-		select{
-		case <-time.After(time.Second):
-			err = i.SendData(daemonNameForGrafana, "IsRunning", 1)
-			if err != nil {
-				return err
+		select {
+		case <-time.After(time.Duration(nextStatSaveTime-time.Now().Unix()) * time.Second):
+			lockStat.Lock()
+			_ = i.sendData(daemonNameForGrafana, "IsRunning", 1)
+			for k, v := range statCounters {
+				_ = i.sendData(daemonNameForGrafana, k, v)
 			}
+			nextStatSaveTime = t + saveSecondPeriod - t%saveSecondPeriod
+			statCounters = map[string]int64{}
+			lockStat.Unlock()
 		case <-i.StatStopChannel:
-			return nil
+			return
 		}
 	}
+}
+
+// SendValueStatData function
+func (i *InfluxDB) SendValueStatData(statType string, value int64) {
+	lockStat.Lock()
+	d, ok := statCounters[statType]
+	if !ok {
+		statCounters[statType] = value
+	} else {
+		statCounters[statType] = d + value
+	}
+	lockStat.Unlock()
 }
