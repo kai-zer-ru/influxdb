@@ -86,6 +86,24 @@ func (i *InfluxDB) Close() {
 
 // StatHandler isRunning
 func (i *InfluxDB) StatHandler() {
+	go i.startRunning()
+	for {
+		select {
+		case <-time.After(time.Duration(i.SaveSecondPeriod) * time.Second):
+			lockStat.Lock()
+			for k, v := range statCounters {
+				_ = i.sendData(k, v)
+			}
+			statCounters = map[string]int64{}
+			lockStat.Unlock()
+		case <-i.StatStopChannel:
+			i.StatStopChannel <- 1
+			return
+		}
+	}
+}
+
+func (i *InfluxDB) startRunning() {
 	err := i.sendData("IsRunning", 1)
 	if err != nil {
 		return
@@ -94,13 +112,6 @@ func (i *InfluxDB) StatHandler() {
 		select {
 		case <-time.After(time.Second):
 			_ = i.sendData("IsRunning", 1)
-		case <-time.After(time.Duration(i.SaveSecondPeriod) * time.Second):
-			lockStat.Lock()
-			for k, v := range statCounters {
-				_ = i.sendData(k, v)
-			}
-			statCounters = map[string]int64{}
-			lockStat.Unlock()
 		case <-i.StatStopChannel:
 			return
 		}
