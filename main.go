@@ -17,7 +17,7 @@ type InfluxDB struct {
 	HostPort         string
 	// deprecated
 	MainDatabaseName string
-	DaemonNae string
+	DaemonName string
 	Organisation     string
 	Bucket           string
 	StatStopChannel  chan int
@@ -47,7 +47,7 @@ func (i *InfluxDB) Connect() error {
 		if i.HostPort == "" {
 			return errors.New("no host name")
 		}
-		if i.DaemonNae == "" {
+		if i.DaemonName == "" {
 			return errors.New("no DaemonNae name")
 		}
 		if i.SaveSecondPeriod == 0 {
@@ -67,7 +67,7 @@ func (i *InfluxDB) sendData(pointName string, value interface{}) error {
 	if !i.isConnected {
 		return errors.New("not connected")
 	}
-	p := influxdb2.NewPoint(i.DaemonNae,
+	p := influxdb2.NewPoint(i.DaemonName,
 		map[string]string{"point": pointName},
 		map[string]interface{}{"value": value},
 		time.Now(),
