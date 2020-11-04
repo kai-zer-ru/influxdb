@@ -11,28 +11,22 @@ import (
 
 // InfluxDB struct
 type InfluxDB struct {
-	isConnected      bool
-	client           influxdb2.Client
-	writeAPI         api.WriteAPIBlocking
-	HostPort         string
+	isConnected bool
+	client      influxdb2.Client
+	writeAPI    api.WriteAPIBlocking
+	HostPort    string
 	// deprecated
 	MainDatabaseName string
-	DaemonName string
+	DaemonName       string
 	Organisation     string
 	Bucket           string
 	StatStopChannel  chan int
 	SaveSecondPeriod int64
 }
 
-type statData struct {
-	statType string
-	counter  int64
-}
-
 var (
-	statChannels     = make(chan statData, 1000000) // канал сбора статистики
-	lockStat         sync.Mutex
-	statCounters     = make(map[string]int64) // данные по счетчикам
+	lockStat     sync.Mutex
+	statCounters = make(map[string]interface{}) // данные по счетчикам
 )
 
 // Connect to influxdb
@@ -94,7 +88,7 @@ func (i *InfluxDB) StatHandler() {
 			for k, v := range statCounters {
 				_ = i.sendData(k, v)
 			}
-			statCounters = map[string]int64{}
+			statCounters = map[string]interface{}{}
 			lockStat.Unlock()
 		case <-i.StatStopChannel:
 			i.StatStopChannel <- 1
@@ -118,14 +112,31 @@ func (i *InfluxDB) startRunning() {
 	}
 }
 
-// SendValueStatData function
+// SendValueStatDataInt64 function
 func (i *InfluxDB) SendValueStatData(statType string, value int64) {
+	i.SendValueStatDataInt64(statType, value)
+}
+
+// SendValueStatData function
+func (i *InfluxDB) SendValueStatDataInt64(statType string, value int64) {
 	lockStat.Lock()
 	d, ok := statCounters[statType]
 	if !ok {
 		statCounters[statType] = value
 	} else {
-		statCounters[statType] = d + value
+		statCounters[statType] = d.(int64) + value
+	}
+	lockStat.Unlock()
+}
+
+// SendValueStatDataFloat64 function
+func (i *InfluxDB) SendValueStatDataFloat64(statType string, value float64) {
+	lockStat.Lock()
+	d, ok := statCounters[statType]
+	if !ok {
+		statCounters[statType] = value
+	} else {
+		statCounters[statType] = d.(float64) + value
 	}
 	lockStat.Unlock()
 }
